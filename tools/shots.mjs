@@ -46,7 +46,13 @@ const SEED = `(async () => {
   }
   return 'no seed';
 })()`;
-const SETTINGS = `localStorage.setItem('tycoon-table.settings', JSON.stringify({ music: false, sfx: false, volume: 0, quality: 'high', fast: false, follow: true, seenTutorial: true }))`;
+const SETTINGS = `localStorage.setItem('tycoon-table.settings', JSON.stringify({ music: false, sfx: false, volume: 0, quality: 'high', fast: false, follow: true, seenTutorial: true, leftPanel: false, rightPanel: false }))`;
+// Picks the most built-up rival-owned property (a hotel if any) so the side card shows a full title deed with rent due.
+const INSPECT = () => `(() => { const t = window.__tycoon; if (!t) return 'no dev handle';
+  const props = Object.entries(t.engine.s.props).map(([i, p]) => [Number(i), p]).filter(([, p]) => p.owner && p.owner !== 'p1');
+  props.sort((a, b) => b[1].houses - a[1].houses);
+  const i = props[0]?.[0] ?? 39; t.view.selectTile(i);
+  return 'inspecting tile ' + i; })()`;
 const click = (text) => `(() => { const b = [...document.querySelectorAll('button')].find((x) => [x.getAttribute('aria-label'), x.title, x.textContent].join(' ').includes(${JSON.stringify(text)})); if (b) b.click(); return !!b; })()`;
 
 try {
@@ -88,7 +94,7 @@ try {
   await open({ seed: true }); await resume(); await run(click('Transaction history')); await sleep(1500); await grab('history');
 
   await desktop();
-  await open({ seed: true }); await resume(); await sleep(1000);
+  await open({ seed: true }); await resume(); console.log(await run(INSPECT())); await sleep(1800);
   await grab('web', { width: 1440, dest: path.join(ROOT, 'tools', 'web-tycoon.jpg') });
   console.log('captured', fs.readdirSync(SHOTS).join(', '), '+ tools/web-tycoon.jpg');
   ws.close();
