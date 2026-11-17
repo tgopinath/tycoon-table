@@ -40,6 +40,7 @@ export class BoardScene {
   private pot!: THREE.Group;
   private highlight!: THREE.Mesh;
   private ring!: THREE.Mesh;
+  private mark!: THREE.Mesh;
   private activeId: string | null = null;
   private camGoal = new THREE.Vector3();
   private sun!: THREE.DirectionalLight;
@@ -131,6 +132,8 @@ export class BoardScene {
     // hover highlight + active ring
     this.highlight = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: '#ffe27a', transparent: true, opacity: 0.28, depthWrite: false }));
     this.highlight.rotation.x = -Math.PI / 2; this.highlight.position.y = TOP_Y + 0.003; this.highlight.visible = false; sc.add(this.highlight);
+    this.mark = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ color: '#ffe27a', transparent: true, opacity: 0.4, depthWrite: false }));
+    this.mark.rotation.x = -Math.PI / 2; this.mark.position.y = TOP_Y + 0.004; this.mark.visible = false; sc.add(this.mark);
     this.ring = new THREE.Mesh(new THREE.RingGeometry(0.3, 0.36, 48), new THREE.MeshBasicMaterial({ color: '#ffe27a', transparent: true, opacity: 0.9, depthWrite: false }));
     this.ring.rotation.x = -Math.PI / 2; this.ring.position.y = TOP_Y + 0.006; sc.add(this.ring);
     void trim;
@@ -189,6 +192,16 @@ export class BoardScene {
       if (i !== null) this.onTileClick(i);
     });
   }
+  /** Glow the space a token just landed on, in the player's colour. */
+  markTile(i: number | null, color = '#ffe27a') {
+    if (i === null) { this.mark.visible = false; return; }
+    const g = tileGeom(i);
+    const horiz = Math.abs(g.inward[1]) > 0.5;
+    this.mark.position.x = g.cx; this.mark.position.z = g.cz;
+    this.mark.scale.set(g.corner ? g.w : horiz ? g.w : g.d, g.corner ? g.d : horiz ? g.d : g.w, 1);
+    (this.mark.material as THREE.MeshBasicMaterial).color.set(color);
+    this.mark.visible = true;
+  }
   showHighlight(i: number | null) {
     if (i === null) { this.highlight.visible = false; return; }
     const g = tileGeom(i);
@@ -210,6 +223,7 @@ export class BoardScene {
       j.fn(t);
       if (t >= 1) { this.jobs.splice(this.jobs.indexOf(j), 1); j.done(); }
     }
+    if (this.mark.visible) (this.mark.material as THREE.MeshBasicMaterial).opacity = 0.28 + Math.sin(now / 220) * 0.14;
     // active-player ring + camera follow
     const tok = this.activeId ? this.tokens.get(this.activeId) : null;
     if (tok) {

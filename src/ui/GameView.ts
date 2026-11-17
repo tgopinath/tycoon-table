@@ -57,6 +57,7 @@ export class GameView {
     this.hud.hidden = true; this.hud.innerHTML = ''; this.hud.onclick = null;
     window.onkeydown = null;
     this.closeModal();
+    this.hideLanded();
     this.scene.setActive(null);
   }
 
@@ -74,6 +75,7 @@ export class GameView {
     try { await this.playEvents(this.e.drainEvents()); } finally { this.busy = false; }
     saveGame(this.s);
     this.render();
+    this.refreshLanded();
     if (this.s.phase === 'over') { this.finish(); return true; }
     this.syncPrompt();
     this.schedule();
@@ -91,7 +93,9 @@ export class GameView {
         }
         case 'move': {
           const p = M.getPlayer(this.s, ev.playerId);
+          this.hideLanded();
           await this.scene.moveToken(ev.playerId, ev.path, ev.teleport, ev.teleport && p.inJail);
+          this.showLanded(p.id, ev.path[ev.path.length - 1]);
           break;
         }
         case 'tx': {
@@ -127,6 +131,7 @@ export class GameView {
         case 'turn': {
           const p = M.getPlayer(this.s, ev.playerId);
           this.scene.setActive(p.id);
+          this.hideLanded();
           this.turnBanner(p);
           break;
         }
@@ -319,6 +324,82 @@ export class GameView {
     </div>`;
   }
 
+  /** Card for any space: a title deed for properties, an illustrated card for the rest. */
+  private placeCard(i: number) {
+    if (M.isOwnable(i)) return this.tileCard(i);
+    const s = this.s, t = TILES[i];
+    const spec: Record<string, [string, string, string]> = {
+      start: ['🏁', '#D7263D', `Collect ${money(s.rules.salary)} salary every time you pass Start.${s.rules.doubleSalaryOnStart ? ` Land exactly here for ${money(s.rules.salary * 2)}.` : ''}`],
+      jail: ['🔒', '#F08A24', `Just visiting — or serving time. Leave by rolling doubles, paying ${money(s.rules.bail)} bail, or using a Get Out of Jail Free card.`],
+      parking: ['🅿️', '#1F9D55', s.rules.freeParkingPot ? `Land here to win the Free Parking jackpot — currently ${money(s.pot)}.` : 'A free resting spot. Nothing happens here.'],
+      gotojail: ['🚔', '#2A4BA0', 'Go directly to Jail. Do not pass Start, do not collect salary.'],
+      chance: ['❓', '#E76F1E', 'Draw a Chance card: it may reward you, fine you or move you.'],
+      community: ['🧰', '#138A8A', 'Draw a Community Chest card: rewards, fees and surprises.'],
+      tax: [i === 4 ? '💰' : '💎', '#7A3E9D', `Pay ${money(t.tax ?? 0)} to the ${s.rules.freeParkingPot ? 'Free Parking pot' : 'bank'}.`],
+    };
+    const [ico, col, text] = spec[t.kind] ?? ['📍', '#555', ''];
+    return `<div class="deed spot" style="--gc:${col}">
+      <div class="deed-band"><small>Space ${i}</small><b>${esc(t.name)}</b></div>
+      <div class="spot-ico">${ico}</div><p class="spot-text">${text}</p></div>`;
+  }
+
+  private landedStatus(i: number, p: Player) {
+    const s = this.s, t = TILES[i];
+    if (M.isOwnable(i)) {
+      const ps = s.props[i];
+      if (!ps.owner) return { tone: 'sale', text: `For sale · ${money(t.price!)}` };
+      if (ps.owner === p.id) return { tone: 'mine', text: 'Your property — no rent due' };
+      const o = M.getPlayer(s, ps.owner);
+      if (ps.mortgaged) return { tone: 'info', text: `Mortgaged by ${esc(o.name)} — no rent` };
+      const h = this.e.head;
+      const due = h?.kind === 'pay' && h.tileId === i && h.playerId === p.id ? h.amount : M.calcRent(s, i, s.lastDice ? s.lastDice[0] + s.lastDice[1] : 7);
+      return { tone: 'due', text: `Owned by ${chip(o)} · rent ${money(due)}` };
+    }
+    const map: Record<string, { tone: string; text: string }> = {
+      tax: { tone: 'due', text: `Tax due · ${money(t.tax ?? 0)}` },
+      chance: { tone: 'info', text: 'Drawing a Chance card' },
+      community: { tone: 'info', text: 'Drawing a Community Chest card' },
+      gotojail: { tone: 'due', text: 'Off to Jail!' },
+      jail: { tone: 'info', text: p.inJail ? 'In Jail' : 'Just visiting' },
+      parking: { tone: 'mine', text: s.rules.freeParkingPot && s.pot ? `Jackpot · ${money(s.pot)}` : 'Free rest stop' },
+      start: { tone: 'mine', text: 'Salary collected' },
+    };
+    return map[t.kind] ?? { tone: 'info', text: '' };
+  }
+
+  private landedFor: number | null = null;
+  private showLanded(pid: string, i: number) {
+    const p = M.getPlayer(this.s, pid);
+    const el = $('#landed');
+    const st = this.landedStatus(i, p);
+    this.landedFor = i;
+    this.scene.markTile(i, p.color);
+    el.style.setProperty('--pc', p.color);
+    el.innerHTML = `<div class="ld-head"><span class="ld-tok">${icon(p)}</span><span><small>${esc(p.name)} landed on</small><b>${esc(TILES[i].name)}</b></span>
+      <button class="x sm" data-ld="close" aria-label="Close">✕</button></div>
+      <div class="ld-card">${this.placeCard(i)}</div>
+      <div class="ld-status ${st.tone}">${st.text}</div>`;
+    el.hidden = false;
+    el.classList.remove('in'); void el.offsetWidth; el.classList.add('in');
+    $('[data-ld="close"]', el).addEventListener('click', ev => { ev.stopPropagation(); this.hideLanded(); });
+    // On phones the card starts as a compact strip; tap it to see the full card.
+    $('.ld-head', el).addEventListener('click', () => el.classList.toggle('open'));
+  }
+  private refreshLanded() {
+    if (this.landedFor === null || $('#landed').hidden) return;
+    const st = this.landedStatus(this.landedFor, M.currentPlayer(this.s));
+    const box = $('#landed .ld-status');
+    const card = $('#landed .ld-card');
+    if (card) card.innerHTML = this.placeCard(this.landedFor);
+    if (box) { box.className = `ld-status ${st.tone}`; box.innerHTML = st.text; }
+  }
+  private hideLanded() {
+    this.landedFor = null;
+    const el = $('#landed');
+    if (el) { el.hidden = true; el.innerHTML = ''; }
+    this.scene.markTile(null);
+  }
+
   private canHumanManage() {
     const cur = M.currentPlayer(this.s);
     return !this.busy && !cur.isAI && !this.e.head && this.s.phase !== 'over';
@@ -448,12 +529,14 @@ export class GameView {
     this.modal = key;
     this.modalEl.innerHTML = `<div class="sheet ${cls}">${html}</div>`;
     this.modalEl.hidden = false;
+    document.body.classList.add('modal-open');
     this.modalEl.onclick = ev => { if (ev.target === this.modalEl && key.startsWith('panel:')) this.closeModal(); };
   }
   private closeModal() {
     this.modal = null;
     this.modalEl.hidden = true;
     this.modalEl.innerHTML = '';
+    document.body.classList.remove('modal-open');
   }
   private bind(sel: string, fn: (el: HTMLElement) => void) {
     $$(sel, this.modalEl).forEach(el => el.addEventListener('click', () => { if (!(el as HTMLButtonElement).disabled) { sound.play('click'); fn(el); } }));
