@@ -33,8 +33,9 @@ const INK = '#1d2433';
 const IVORY = '#FBF5E6';
 
 export function boardTexture(): THREE.CanvasTexture {
-  const N = 2048, k = N / S;
-  const [c, ctx] = canvas(N, N);
+  const N = 2048, k = N / S, SCALE = 1.5;
+  const [c, ctx] = canvas(N * SCALE, N * SCALE);
+  ctx.scale(SCALE, SCALE);
   const r = prng(7);
   // Centre: a little park with roads, a pond and trees, like a printed city board.
   const inner = (S - 2 * C) * k, o = C * k;
@@ -103,12 +104,21 @@ function drawTile(ctx: CanvasRenderingContext2D, i: number, k: number) {
   ctx.fillRect(-w / 2, -d / 2, w, d);
   ctx.strokeStyle = INK; ctx.lineWidth = 3; ctx.strokeRect(-w / 2, -d / 2, w, d);
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = INK;
-  const name = (text: string, y: number, size = 21) => {
-    ctx.font = `800 ${size}px ${FONT}`;
-    wrap(ctx, text.toUpperCase(), w - 16).forEach((l, j) => ctx.fillText(l, 0, y + j * (size + 3)));
+  const name = (text: string, y: number, size = 27) => {
+    // shrink until the longest word fits the tile width
+    const up = text.toUpperCase();
+    for (; size > 16; size--) {
+      ctx.font = `900 ${size}px ${FONT}`;
+      if (Math.max(...up.split(' ').map(word => ctx.measureText(word).width)) <= w - 14) break;
+    }
+    ctx.font = `900 ${size}px ${FONT}`;
+    wrap(ctx, up, w - 14).forEach((l, j) => ctx.fillText(l, 0, y + j * (size + 2)));
   };
   const icon = (e: string, y: number, size = 64) => { ctx.font = `${size}px "Apple Color Emoji","Segoe UI Emoji",sans-serif`; ctx.fillText(e, 0, y); };
-  const price = (p: number) => { ctx.font = `700 22px ${FONT}`; ctx.fillStyle = INK; ctx.fillText(`$${p}`, 0, d / 2 - 24); };
+  const price = (p: number) => {
+    ctx.fillStyle = INK; ctx.beginPath(); ctx.roundRect(-44, d / 2 - 44, 88, 34, 17); ctx.fill();
+    ctx.font = `800 24px ${FONT}`; ctx.fillStyle = '#fff'; ctx.fillText(`$${p}`, 0, d / 2 - 26);
+  };
   if (g.corner) {
     ctx.rotate(Math.PI / 4 * (i === 0 || i === 20 ? -1 : 1) * 0);
     drawCorner(ctx, i, w);
@@ -116,22 +126,28 @@ function drawTile(ctx: CanvasRenderingContext2D, i: number, k: number) {
     const col = GROUP_BY_ID[t.group!].color;
     ctx.fillStyle = col; ctx.fillRect(-w / 2, -d / 2, w, BAND * k);
     ctx.strokeRect(-w / 2, -d / 2, w, BAND * k);
-    ctx.fillStyle = INK; name(t.name, -d / 2 + BAND * k + 34);
-    // little street illustration
-    ctx.fillStyle = col + '33'; ctx.beginPath(); ctx.roundRect(-w / 2 + 14, 20, w - 28, 50, 10); ctx.fill();
+    ctx.fillStyle = INK; name(t.name, -d / 2 + BAND * k + 30);
+    // little house drawing in the group colour
+    ctx.save(); ctx.translate(0, 52);
+    ctx.fillStyle = col + '40'; ctx.beginPath(); ctx.ellipse(0, 26, 52, 9, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(-30, -2); ctx.lineTo(0, -28); ctx.lineTo(30, -2); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = col + 'aa'; ctx.fillRect(-22, -2, 44, 28);
+    ctx.fillStyle = IVORY; ctx.fillRect(-6, 8, 12, 18); ctx.fillRect(-17, 3, 8, 8); ctx.fillRect(9, 3, 8, 8);
+    ctx.restore();
     price(t.price!);
   } else if (t.kind === 'railway') {
-    name(t.name, -d / 2 + 34); icon('🚆', 10, 70); price(t.price!);
+    name(t.name, -d / 2 + 34); icon('🚆', 28, 76); price(t.price!);
   } else if (t.kind === 'utility') {
-    name(t.name, -d / 2 + 34); icon(i === 12 ? '⚡' : '🚰', 10, 70); price(t.price!);
+    name(t.name, -d / 2 + 34); icon(i === 12 ? '⚡' : '🚰', 28, 76); price(t.price!);
   } else if (t.kind === 'chance') {
     ctx.fillStyle = '#E76F1E'; ctx.font = `900 120px ${FONT}`; ctx.fillText('?', 0, 10);
-    ctx.fillStyle = INK; name('Chance', -d / 2 + 34);
+    ctx.fillStyle = INK; name('Chance', -d / 2 + 30, 30);
   } else if (t.kind === 'community') {
-    name('Community Chest', -d / 2 + 34); icon('🧰', 30, 66);
+    name('Community Chest', -d / 2 + 34); icon('🧰', 40, 76);
   } else if (t.kind === 'tax') {
-    name(t.name, -d / 2 + 34); icon(i === 4 ? '💰' : '💎', 10, 66);
-    ctx.font = `700 21px ${FONT}`; ctx.fillText(`PAY $${t.tax}`, 0, d / 2 - 24);
+    name(t.name, -d / 2 + 34); icon(i === 4 ? '💰' : '💎', 26, 72);
+    ctx.fillStyle = '#c0392b'; ctx.beginPath(); ctx.roundRect(-58, d / 2 - 44, 116, 34, 17); ctx.fill();
+    ctx.font = `800 22px ${FONT}`; ctx.fillStyle = '#fff'; ctx.fillText(`PAY $${t.tax}`, 0, d / 2 - 26);
   }
   ctx.restore();
 }

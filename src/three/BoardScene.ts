@@ -29,6 +29,11 @@ export class BoardScene {
   idleSpin = false;
   onTileClick: (i: number) => void = () => {};
   onStep: () => void = () => {};
+  onTileHover: (i: number | null, x: number, y: number) => void = () => {};
+  /** Phones: a fixed overhead view that never moves. */
+  isStatic = false;
+  private topView = false;
+  private orbiting = false;
 
   private jobs: Job[] = [];
   private tokens = new Map<string, THREE.Group>();
@@ -158,6 +163,10 @@ export class BoardScene {
     const aspect = w / h;
     this.camera.fov = aspect < 0.8 ? 50 : 38;
     this.camera.updateProjectionMatrix();
+    this.isStatic = Math.min(w, h) < 600;
+    this.controls.enabled = !this.isStatic;
+    if (this.isStatic) { this.placeStatic(); return; }
+    this.scene.fog = new THREE.Fog('#1a1410', 28, 60);
     // Pull the camera back on narrow screens so the whole board fits.
     const fit = aspect < 1 ? Math.min(2, Math.max(1, 0.74 / aspect)) : 1;
     if (fit !== this.fit) {
@@ -180,10 +189,12 @@ export class BoardScene {
       return hit ? tileAt(hit.point.x, hit.point.z) : null;
     };
     el.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; });
+    el.addEventListener('pointerleave', () => { this.showHighlight(null); this.onTileHover(null, 0, 0); });
     el.addEventListener('pointermove', e => {
       if (e.pointerType !== 'mouse') return;
       const i = pick(e);
       this.showHighlight(i);
+      this.onTileHover(i, e.clientX, e.clientY);
       el.style.cursor = i !== null ? 'pointer' : 'grab';
     });
     el.addEventListener('pointerup', e => {
@@ -230,12 +241,20 @@ export class BoardScene {
       this.ring.visible = true;
       this.ring.position.x = tok.position.x; this.ring.position.z = tok.position.z;
       const s = 1 + Math.sin(now / 260) * 0.08; this.ring.scale.set(s, s, s);
-      if (this.follow && !this.userCam) {
-        this.camGoal.set(tok.position.x * 0.35, 0, tok.position.z * 0.35 + 0.4);
+      if (this.follow && !this.userCam && !this.isStatic && !this.idleSpin) {
+        this.camGoal.set(this.topView ? 0 : tok.position.x * 0.35, 0, this.topView ? 0.7 : tok.position.z * 0.35);
         this.controls.target.lerp(this.camGoal, 0.03);
+        // turn the board so the active player's side faces the viewer
+        const meta = this.tokenMeta.get(this.activeId!);
+        if (meta && !this.orbiting) {
+          const sp = this.sph();
+          let dt = this.sideTheta(meta.pos) - sp.theta;
+          while (dt > Math.PI) dt -= Math.PI * 2; while (dt < -Math.PI) dt += Math.PI * 2;
+          if (Math.abs(dt) > 0.002) this.setSph(sp.radius, sp.phi, sp.theta + dt * 0.035);
+        }
       }
     } else this.ring.visible = false;
-    if (this.idleSpin) {
+    if (this.idleSpin && !this.isStatic) {
       const a = now / 9000;
       this.camera.position.set(Math.sin(a) * 15 * this.fit, 11 * this.fit, Math.cos(a) * 15 * this.fit);
       this.controls.target.set(0, 0, 0);
@@ -274,9 +293,63 @@ export class BoardScene {
     const g = makeToken(token, color);
     this.scene.add(g); this.tokens.set(id, g);
   }
+  /** Fixed, near top-down camera sized so the whole board fits the screen. */
+  private placeStatic() {
+    const E = S / 2 + 0.45, tilt = 0.12;
+    const tv = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+    const d = Math.max(E / tv, E / (tv * this.camera.aspect)) * 1.04;
+    this.controls.target.set(0, 0, 0);
+    this.camera.position.set(0, Math.cos(tilt) * d, Math.sin(tilt) * d);
+    this.camera.lookAt(0, 0, 0);
+    this.scene.fog = new THREE.Fog('#1a1410', d + 10, d + 50);
+  }
+
+  private sph() { return new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(this.controls.target)); }
+  private setSph(r: number, phi: number, theta: number) {
+    this.camera.position.copy(this.controls.target).add(new THREE.Vector3().setFromSpherical(new THREE.Spherical(r, phi, theta)));
+  }
+  private orbitTo(theta: number | null, phi: number | null, radius: number | null, ms = 750, target?: THREE.Vector3) {
+    if (this.isStatic) return Promise.resolve();
+    const a = this.sph();
+    const tg0 = this.controls.target.clone();
+    let dt = theta === null ? 0 : theta - a.theta;
+    while (dt > Math.PI) dt -= Math.PI * 2; while (dt < -Math.PI) dt += Math.PI * 2;
+    const p1 = phi ?? a.phi, r1 = radius ?? a.radius;
+    this.orbiting = true;
+    return this.anim(ms, k => {
+      const e = ease.inOut(k);
+      if (target) this.controls.target.lerpVectors(tg0, target, e);
+      this.setSph(a.radius + (r1 - a.radius) * e, a.phi + (p1 - a.phi) * e, a.theta + dt * e);
+    }).then(() => { this.orbiting = false; });
+  }
+  /** Camera azimuth that puts a tile's side of the board nearest the viewer. */
+  private sideTheta(pos: number) {
+    const side = pos === 0 ? 0 : Math.floor((pos - 1) / 10);
+    return [0, -Math.PI / 2, Math.PI, Math.PI / 2][side];
+  }
+  private get defaultPhi() { return this.topView ? 0.06 : 0.77; }
+  private get defaultRadius() {
+    if (!this.topView) return 18.8 * this.fit;
+    const E = S / 2 + 0.6, tv = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+    return Math.max(E / tv, E / (tv * this.camera.aspect)) * 1.12;
+  }
+  rotateView(dir: 1 | -1) { this.userCam = true; return this.orbitTo(this.sph().theta + dir * Math.PI / 2, null, null); }
+  toggleTopView() {
+    this.topView = !this.topView;
+    return this.orbitTo(null, this.defaultPhi, this.defaultRadius, 750, this.topView ? new THREE.Vector3(0, 0, 0.7) : undefined);
+  }
+  zoom(f: number) { this.userCam = true; const r = THREE.MathUtils.clamp(this.sph().radius * f, this.controls.minDistance, this.controls.maxDistance); return this.orbitTo(null, null, r, 300); }
+  recenter() {
+    this.userCam = false;
+    const meta = this.activeId ? this.tokenMeta.get(this.activeId) : null;
+    return this.orbitTo(meta && this.follow ? this.sideTheta(meta.pos) : 0, this.defaultPhi, this.defaultRadius);
+  }
+  get isTopView() { return this.topView; }
+
   /** Glide back to the default seat at the table. */
   resetCamera() {
     this.idleSpin = false;
+    if (this.isStatic) { this.placeStatic(); return Promise.resolve(); }
     const p0 = this.camera.position.clone(), t0 = this.controls.target.clone();
     const p1 = new THREE.Vector3(0, 13.5 * this.fit, 13.5 * this.fit), t1 = new THREE.Vector3(0, 0, 0.4);
     // swing around the board rather than cutting through it

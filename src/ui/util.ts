@@ -9,10 +9,10 @@ export const fmtTime = (ms: number) => {
   return `${h ? `${h}:` : ''}${String(m).padStart(h ? 2 : 1, '0')}:${String(ss).padStart(2, '0')}`;
 };
 
-export interface Settings { music: boolean; sfx: boolean; volume: number; quality: Quality; fast: boolean; follow: boolean; seenTutorial: boolean }
+export interface Settings { music: boolean; sfx: boolean; volume: number; quality: Quality; fast: boolean; follow: boolean; seenTutorial: boolean; leftPanel: boolean; rightPanel: boolean }
 const KEY = 'tycoon-table.settings';
 const SAVE = 'tycoon-table.save';
-const defaults: Settings = { music: false, sfx: true, volume: 0.7, quality: 'high', fast: false, follow: true, seenTutorial: false };
+const defaults: Settings = { music: false, sfx: true, volume: 0.7, quality: 'high', fast: false, follow: true, seenTutorial: false, leftPanel: false, rightPanel: false };
 
 export function loadSettings(): Settings {
   try { return { ...defaults, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }; } catch { return { ...defaults }; }

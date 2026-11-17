@@ -7,7 +7,7 @@ import * as M from '../engine/managers';
 import type { Action, GameEvent, PayPrompt, Player, Prompt, TradeOffer } from '../engine/types';
 import { sound } from '../audio/Sound';
 import type { BoardScene } from '../three/BoardScene';
-import { $, $$, esc, fmtTime, money, saveGame, type Settings, toast } from './util';
+import { $, $$, esc, fmtTime, money, saveGame, saveSettings, type Settings, toast } from './util';
 import { settingsModal } from './screens';
 
 type PanelModal = 'build' | 'mortgage' | 'trade' | 'history' | 'jail' | 'pause' | 'portfolio' | 'tile' | 'settings' | 'confirmEnd';
@@ -26,8 +26,10 @@ export class GameView {
   private coachOff = false;
   private hud = $('#hud');
   private modalEl = $('#modal');
-  private leftOpen = false;
-  private rightOpen = false;
+  private get leftOpen() { return this.settings.leftPanel; }
+  private set leftOpen(v: boolean) { this.settings.leftPanel = v; saveSettings(this.settings); }
+  private get rightOpen() { return this.settings.rightPanel; }
+  private set rightOpen(v: boolean) { this.settings.rightPanel = v; saveSettings(this.settings); }
 
   constructor(private e: GameEngine, private scene: BoardScene, private settings: Settings,
     private cb: { exit(): void; finished(): void; applySettings(s: Settings): void }) {}
@@ -39,6 +41,7 @@ export class GameView {
     this.scene.load(this.s);
     this.scene.onTileClick = i => this.selectTile(i);
     this.scene.onStep = () => sound.play('step');
+    this.scene.onTileHover = (i, x, y) => this.tileTip(i, x, y);
     this.hud.hidden = false;
     this.hud.innerHTML = this.hudShell();
     this.hud.onclick = ev => this.onHudClick(ev);
@@ -187,10 +190,11 @@ export class GameView {
       <div class="brand xs">TYCOON<span>TABLE</span></div>
       <div class="stat"><small>Round</small><b id="h-round"></b></div>
       <div class="stat"><small>${this.s.rules.timeLimitMin ? 'Time left' : 'Time'}</small><b id="h-time">0:00</b></div>
+      <div class="top-players" id="h-players"></div>
       <div class="turnchip" id="h-turn"></div>
       <div class="top-actions">
-        <button class="icon mob" data-ui="left" title="Players">👥</button>
-        <button class="icon mob" data-ui="right" title="Activity">📜</button>
+        <button class="icon tg-btn" data-ui="left" title="Players &amp; portfolio" aria-label="Players and portfolio">👥</button>
+        <button class="icon tg-btn" data-ui="right" title="Activity &amp; property info" aria-label="Activity and property info">📜</button>
         <button class="icon" data-ui="history" title="Transaction history">🧾</button>
         <button class="icon" data-ui="settings" title="Settings">⚙️</button>
         <button class="icon" data-ui="pause" title="Pause">⏸</button>
@@ -199,6 +203,15 @@ export class GameView {
     <div class="coach" id="coach" hidden></div>
     <aside class="panel left" id="p-left"></aside>
     <aside class="panel right" id="p-right"></aside>
+    <div class="viewctl" id="viewctl">
+      <button class="icon" data-ui="cam-l" title="Rotate board left" aria-label="Rotate board left">⟲</button>
+      <button class="icon" data-ui="cam-r" title="Rotate board right" aria-label="Rotate board right">⟳</button>
+      <button class="icon" data-ui="cam-top" title="Top view" aria-label="Toggle top view">⬒</button>
+      <button class="icon" data-ui="cam-in" title="Zoom in" aria-label="Zoom in">＋</button>
+      <button class="icon" data-ui="cam-out" title="Zoom out" aria-label="Zoom out">－</button>
+      <button class="icon" data-ui="cam-c" title="Recenter on the active player" aria-label="Recenter">⌖</button>
+    </div>
+    <div class="tile-tip" id="tile-tip" hidden></div>
     <div class="dice-badge" id="dice-badge" hidden></div>
     <footer class="actions" id="p-actions"></footer>
     <div class="scrim" id="scrim"></div>`;
@@ -210,11 +223,18 @@ export class GameView {
     $('#h-round').textContent = String(s.round);
     $('#h-turn').innerHTML = `${chip(cur)}<small>${cur.isAI ? 'AI' : 'Your turn'}</small>`;
     $('#h-turn').style.setProperty('--pc', cur.color);
-    $('#p-left').innerHTML = this.leftPanel();
-    $('#p-right').innerHTML = this.rightPanel();
+    $('#p-left').innerHTML = `<button class="panel-x" data-ui="left" aria-label="Close panel">✕ Close</button>${this.leftPanel()}`;
+    $('#p-right').innerHTML = `<button class="panel-x" data-ui="right" aria-label="Close panel">✕ Close</button>${this.rightPanel()}`;
     $('#p-actions').innerHTML = this.actionBar();
     this.hud.classList.toggle('left-open', this.leftOpen);
     this.hud.classList.toggle('right-open', this.rightOpen);
+    this.hud.classList.toggle('static', this.scene.isStatic);
+    document.body.classList.toggle('left-open', this.leftOpen);
+    $$('[data-ui="left"]', this.hud).forEach(b => b.classList.toggle('on', this.leftOpen));
+    $$('[data-ui="right"]', this.hud).forEach(b => b.classList.toggle('on', this.rightOpen));
+    $('[data-ui="cam-top"]', this.hud)?.classList.toggle('on', this.scene.isTopView);
+    $('#h-players').innerHTML = s.players.map(p => `<button class="tpl ${p.id === cur.id ? 'on' : ''} ${p.bankrupt ? 'out' : ''}" style="--pc:${p.color}" data-ui="portfolio" data-pid="${p.id}" title="${esc(p.name)}">
+      <span>${icon(p)}</span><b data-cash="${p.id}">${p.bankrupt ? '—' : money(this.shownCash.get(p.id) ?? p.cash)}</b></button>`).join('');
     this.renderCoach();
     for (const p of s.players) if (!this.busy) this.animateCash(p.id, p.cash);
   }
@@ -368,14 +388,33 @@ export class GameView {
   }
 
   private landedFor: number | null = null;
-  private showLanded(pid: string, i: number) {
-    const p = M.getPlayer(this.s, pid);
+  private tileTip(i: number | null, x: number, y: number) {
+    const el = $('#tile-tip');
+    if (!el) return;
+    if (i === null || this.modal) { el.hidden = true; return; }
+    const t = TILES[i], ps = this.s.props[i];
+    const g = t.group ? GROUP_BY_ID[t.group] : null;
+    const owner = ps?.owner ? M.getPlayer(this.s, ps.owner) : null;
+    const extra = M.isOwnable(i)
+      ? `${owner ? `${icon(owner)} ${esc(owner.name)}${ps.mortgaged ? ' · mortgaged' : ` · rent ${money(M.calcRent(this.s, i, 7))}`}` : `For sale · ${money(t.price!)}`}${ps.houses ? ` · ${ps.houses === 5 ? '🏨' : '🏠×' + ps.houses}` : ''}`
+      : t.kind === 'tax' ? `Pay ${money(t.tax!)}` : '';
+    el.innerHTML = `${g && t.kind === 'property' ? `<i style="background:${g.color}"></i>` : ''}<b>${esc(t.name)}</b>${extra ? `<small>${extra}</small>` : ''}`;
+    el.hidden = false;
+    el.style.left = `${Math.min(window.innerWidth - 230, x + 16)}px`;
+    el.style.top = `${y + 18}px`;
+  }
+
+  /** Inspect any space: same side card, without a player landing. */
+  private showPlace(i: number) { this.showLanded(null, i); }
+  private showLanded(pid: string | null, i: number) {
+    const viewer = M.currentPlayer(this.s);
+    const p = pid ? M.getPlayer(this.s, pid) : null;
     const el = $('#landed');
-    const st = this.landedStatus(i, p);
+    const st = this.landedStatus(i, p ?? viewer);
     this.landedFor = i;
-    this.scene.markTile(i, p.color);
-    el.style.setProperty('--pc', p.color);
-    el.innerHTML = `<div class="ld-head"><span class="ld-tok">${icon(p)}</span><span><small>${esc(p.name)} landed on</small><b>${esc(TILES[i].name)}</b></span>
+    this.scene.markTile(i, p?.color ?? '#ffe27a');
+    el.style.setProperty('--pc', p?.color ?? '#e8c268');
+    el.innerHTML = `<div class="ld-head"><span class="ld-tok">${p ? icon(p) : '🔎'}</span><span><small>${p ? `${esc(p.name)} landed on` : `Space ${i} · tap other tiles to compare`}</small><b>${esc(TILES[i].name)}</b></span>
       <button class="x sm" data-ld="close" aria-label="Close">✕</button></div>
       <div class="ld-card">${this.placeCard(i)}</div>
       <div class="ld-status ${st.tone}">${st.text}</div>`;
@@ -384,6 +423,7 @@ export class GameView {
     $('[data-ld="close"]', el).addEventListener('click', ev => { ev.stopPropagation(); this.hideLanded(); });
     // On phones the card starts as a compact strip; tap it to see the full card.
     $('.ld-head', el).addEventListener('click', () => el.classList.toggle('open'));
+    if (!p) el.classList.add('open');
   }
   private refreshLanded() {
     if (this.landedFor === null || $('#landed').hidden) return;
@@ -485,8 +525,8 @@ export class GameView {
   private selectTile(i: number) {
     this.selectedTile = i;
     sound.play('click');
-    $('#p-right').innerHTML = this.rightPanel();
-    if (window.innerWidth < 900 && !this.e.head) this.openPanel('tile');
+    this.render();
+    this.showPlace(i);
   }
 
   /* ───────────── input ───────────── */
@@ -507,10 +547,16 @@ export class GameView {
       case 'settings': this.openPanel('settings'); break;
       case 'pause': this.openPanel('pause'); break;
       case 'portfolio': this.portfolioPid = b.dataset.pid!; this.openPanel('portfolio'); break;
-      case 'tile': this.selectTile(Number(b.dataset.tile)); if (window.innerWidth >= 900) this.openPanel('tile'); break;
+      case 'tile': this.selectTile(Number(b.dataset.tile)); break;
       case 'coachoff': this.coachOff = true; this.renderCoach(); break;
-      case 'left': this.leftOpen = !this.leftOpen; this.rightOpen = false; this.render(); break;
-      case 'right': this.rightOpen = !this.rightOpen; this.leftOpen = false; this.render(); break;
+      case 'left': this.leftOpen = !this.leftOpen; if (window.innerWidth < 900) this.rightOpen = false; this.render(); break;
+      case 'right': this.rightOpen = !this.rightOpen; if (window.innerWidth < 900) this.leftOpen = false; this.render(); break;
+      case 'cam-l': this.scene.rotateView(-1); break;
+      case 'cam-r': this.scene.rotateView(1); break;
+      case 'cam-top': this.scene.toggleTopView().then(() => this.render()); this.render(); break;
+      case 'cam-in': this.scene.zoom(0.82); break;
+      case 'cam-out': this.scene.zoom(1.22); break;
+      case 'cam-c': this.scene.recenter(); break;
     }
   }
   private portfolioPid = '';
