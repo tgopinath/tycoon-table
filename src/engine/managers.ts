@@ -292,7 +292,7 @@ export function liquidationValue(s: GameState, pid: string): number {
   let v = getPlayer(s, pid).cash;
   for (const t of ownedTiles(s, pid)) {
     const ps = s.props[t];
-    v += ps.houses * (TILES[t].houseCost! / 2);
+    v += ps.houses * ((TILES[t].houseCost ?? 0) / 2);
     if (!ps.mortgaged) v += TILES[t].mortgage!;
   }
   return v;
@@ -301,7 +301,7 @@ export function netWorth(s: GameState, pid: string): number {
   let v = getPlayer(s, pid).cash;
   for (const t of ownedTiles(s, pid)) {
     const ps = s.props[t];
-    v += TILES[t].price! + ps.houses * TILES[t].houseCost!;
+    v += TILES[t].price! + ps.houses * (TILES[t].houseCost ?? 0);
     if (ps.mortgaged) v -= TILES[t].mortgage!;
   }
   return v;

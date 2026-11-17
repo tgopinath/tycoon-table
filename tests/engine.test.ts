@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GameEngine } from '../src/engine/GameEngine';
 import { decide } from '../src/engine/AIManager';
+import * as M from '../src/engine/managers';
 import type { Action, Prompt } from '../src/engine/types';
 
 function setup(n = 2, ai = false) {
@@ -248,4 +249,11 @@ describe('AI simulation', () => {
       expect(e.s.hotelsLeft + owned).toBe(12);
     }
   }, 60000);
+
+  it('19. values railways and utilities without NaN (net worth, liquidation)', () => {
+    const t = setup();
+    t.s().props[5].owner = 'p1'; t.s().props[12].owner = 'p1'; t.s().props[1].owner = 'p1'; t.s().props[1].houses = 2;
+    expect(M.netWorth(t.s(), 'p1')).toBe(1500 + 200 + 150 + 60 + 2 * 50);
+    expect(M.liquidationValue(t.s(), 'p1')).toBe(1500 + 100 + 75 + 30 + 2 * 25);
+  });
 });
