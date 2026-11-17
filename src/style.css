@@ -319,7 +319,7 @@ body.modal-open #landed { left: max(12px, calc(50% - 240px - 296px)); }
   .top { top: 8px; left: 8px; right: 8px; gap: 10px; padding: 6px 8px 6px 12px; flex-wrap: wrap; }
   .top .brand.xs { display: none; }
   .turnchip small { display: none; }
-  .panel { position: fixed; top: 0; bottom: 0; width: min(340px, 88vw) !important; padding: 72px 10px 110px; background: rgba(14, 11, 8, .92); backdrop-filter: blur(10px); transition: transform .3s cubic-bezier(.3, 1, .4, 1); z-index: 2; }
+  .panel { position: fixed; top: 0; bottom: 0; width: min(340px, 88vw) !important; padding: calc(var(--top-h, 64px) + 8px) 10px 110px; background: rgba(14, 11, 8, .92); backdrop-filter: blur(10px); transition: transform .3s cubic-bezier(.3, 1, .4, 1); z-index: 2; }
   .panel.left { left: 0; transform: translateX(-105%); } .panel.right { right: 0; transform: translateX(105%); }
   #hud.left-open .panel.left, #hud.right-open .panel.right { transform: none; }
   .top { z-index: 3; } .actions { z-index: 3; }
@@ -336,9 +336,16 @@ body.modal-open #landed { left: max(12px, calc(50% - 240px - 296px)); }
   .debt-box { grid-template-columns: repeat(2, 1fr); }
   .mini-stats.four { grid-template-columns: repeat(2, 1fr); }
   .wcoin { width: 48px; height: 48px; }
-  #toasts { top: 64px; }
+  #toasts { top: calc(var(--top-h, 64px) + 4px); }
+  .top .icon { width: 38px; height: 38px; font-size: 16px; }
+  body.landed-open .sheet, body.landed-open .sheet.wide { max-height: calc(100dvh - var(--ld-b, 0px) - 8px); }
+  /* history on phones: keep type, parties, amount and reason; let text wrap */
+  .hist th:nth-child(1), .hist td:nth-child(1), .hist th:nth-child(2), .hist td:nth-child(2), .hist th:nth-child(7), .hist td:nth-child(7) { display: none; }
+  .hist th, .hist td { white-space: normal; padding: 8px 6px; font-size: 12px; vertical-align: top; }
+  .hist td:nth-child(5) { white-space: nowrap; }
+  .hist { table-layout: auto; }
   /* compact strip at the top on phones, above the bottom-sheet popups */
-  #landed, body.modal-open #landed { top: 64px; left: 8px; right: 8px; width: auto; padding: 8px; gap: 6px; grid-template-columns: 1fr auto; align-items: center; }
+  #landed, body.modal-open #landed { top: calc(var(--top-h, 64px) + 6px); left: 8px; right: 8px; width: auto; padding: 8px; gap: 6px; grid-template-columns: 1fr auto; align-items: center; }
   #landed .ld-card { display: none; grid-column: 1 / -1; } #landed.open .ld-card { display: block; }
   #landed .ld-head { cursor: pointer; }
   #landed .ld-head { padding-right: 0; } #landed .ld-head .x { position: static; }

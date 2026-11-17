@@ -46,6 +46,7 @@ export class GameView {
     this.hud.innerHTML = this.hudShell();
     this.hud.onclick = ev => this.onHudClick(ev);
     window.onkeydown = ev => this.onKey(ev);
+    window.onresize = () => this.measureTop();
     for (const p of this.s.players) this.shownCash.set(p.id, p.cash);
     this.tick = window.setInterval(() => this.onTick(), 1000);
     this.render();
@@ -59,6 +60,7 @@ export class GameView {
     if (this.aiTimer) clearTimeout(this.aiTimer);
     this.hud.hidden = true; this.hud.innerHTML = ''; this.hud.onclick = null;
     window.onkeydown = null;
+    window.onresize = null;
     this.closeModal();
     this.hideLanded();
     this.scene.setActive(null);
@@ -229,6 +231,7 @@ export class GameView {
     this.hud.classList.toggle('left-open', this.leftOpen);
     this.hud.classList.toggle('right-open', this.rightOpen);
     this.hud.classList.toggle('static', this.scene.isStatic);
+    this.measureTop();
     document.body.classList.toggle('left-open', this.leftOpen);
     $$('[data-ui="left"]', this.hud).forEach(b => b.classList.toggle('on', this.leftOpen));
     $$('[data-ui="right"]', this.hud).forEach(b => b.classList.toggle('on', this.rightOpen));
@@ -388,6 +391,20 @@ export class GameView {
   }
 
   private landedFor: number | null = null;
+  /** On phones, keep bottom-sheet popups below the landed strip. */
+  private measureLanded() {
+    const el = $('#landed');
+    const open = !!el && !el.hidden;
+    document.body.classList.toggle('landed-open', open);
+    if (open) document.documentElement.style.setProperty('--ld-b', `${Math.round(el.getBoundingClientRect().bottom)}px`);
+  }
+
+  /** Expose the top bar's height so popups on phones sit just below it, even when it wraps. */
+  private measureTop() {
+    const top = $('.top', this.hud);
+    if (top) document.documentElement.style.setProperty('--top-h', `${Math.round(top.getBoundingClientRect().bottom)}px`);
+  }
+
   private tileTip(i: number | null, x: number, y: number) {
     const el = $('#tile-tip');
     if (!el) return;
@@ -422,8 +439,9 @@ export class GameView {
     el.classList.remove('in'); void el.offsetWidth; el.classList.add('in');
     $('[data-ld="close"]', el).addEventListener('click', ev => { ev.stopPropagation(); this.hideLanded(); });
     // On phones the card starts as a compact strip; tap it to see the full card.
-    $('.ld-head', el).addEventListener('click', () => el.classList.toggle('open'));
-    if (!p) el.classList.add('open');
+    $('.ld-head', el).addEventListener('click', () => { el.classList.toggle('open'); this.measureLanded(); });
+    if (!p && !this.scene.isStatic) el.classList.add('open');
+    this.measureLanded();
   }
   private refreshLanded() {
     if (this.landedFor === null || $('#landed').hidden) return;
@@ -437,6 +455,7 @@ export class GameView {
     this.landedFor = null;
     const el = $('#landed');
     if (el) { el.hidden = true; el.innerHTML = ''; }
+    document.body.classList.remove('landed-open');
     this.scene.markTile(null);
   }
 
