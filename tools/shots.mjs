@@ -1,5 +1,5 @@
 // Captures the portfolio card screenshots: node tools/shots.mjs
-// Phone shots: 600-wide JPEGs in prototype/shots. Desktop: 1440x900 JPEG at prototype/web.jpg.
+// Phone shots: 600-wide JPEGs in prototype/shots. Desktop: 1440x900 JPEG at tools/web-tycoon.jpg (copied to the portfolio's assets/thumbs).
 // Runs the Vite dev server so it can play four AI players a few hundred moves with the real engine,
 // save that mid-game position, and resume it (houses, hotels, mortgages and a full transaction history).
 import fs from 'node:fs';
@@ -89,8 +89,8 @@ try {
 
   await desktop();
   await open({ seed: true }); await resume(); await sleep(1000);
-  await grab('web', { width: 1440, dest: path.join(OUT, 'web.jpg') });
-  console.log('captured', fs.readdirSync(SHOTS).join(', '), '+ web.jpg');
+  await grab('web', { width: 1440, dest: path.join(ROOT, 'tools', 'web-tycoon.jpg') });
+  console.log('captured', fs.readdirSync(SHOTS).join(', '), '+ tools/web-tycoon.jpg');
   ws.close();
 } finally {
   const exited = new Promise((r) => chrome.once('exit', r));

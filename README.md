@@ -22,7 +22,7 @@ npm run typecheck
 npm run build      # static site in dist/
 ```
 
-`node tools/shots.mjs` captures the portfolio screenshots (prototype/shots, prototype/web.jpg): it plays four AI players
+`node tools/shots.mjs` captures the portfolio screenshots (prototype/shots and tools/web-tycoon.jpg): it plays four AI players
 with the real engine to a mid-game position, saves it and resumes it in headless Chrome.
 
 ## Deploy
